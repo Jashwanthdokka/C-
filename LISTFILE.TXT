@@ -1,0 +1,77 @@
+    1 ARCHITECTURE HYPERCUBE(7); /*128 processors*/
+    2 #include <mpi.h>
+    3 #include <stdlib.h>
+    4 #include <math.h>
+    5 #define n 700 /* dimension of image */
+    6 #define m 5 /* number of rows in each partition */
+    7 int inrows[m + 2][n + 2], outrows[m][n];
+    8 int filter[3][3] = { 1,1,1,1,1,1,1,1,1 };
+    9 MPI_Status status;
+   10 int myrank, totalproc, blocksize;
+   11 int i, j, k, source, tag, dest;
+   12 void input_image() { /*input and partition the image*/
+   13 
+   14     int image[n + 2][n + 2];
+   15     for (i = 1; i <= n; i++) {
+   16         for (j = 1; j <= n; j++) {
+   17             image[i][j] = rand() % 256;
+   18         }
+   19     }
+   20     /* send partition to each process */
+   21     for (k = 0; k < totalproc; k++) {
+   22         dest = k; tag = 1;
+   23         MPI_Send(&image[k * m][0], blocksize, MPI_INT,
+   24             dest, tag, MPI_COMM_WORLD);
+   25     }
+   26 }
+   27 main() {
+   28     MPI_Init();
+   29     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+   30     MPI_Comm_size(MPI_COMM_WORLD, &totalproc);
+   31     blocksize = (m + 2) * (n + 2);
+   32     if (myrank == 0) input_image();
+   33     /* receive my block of image*/
+   34     source = 0; tag = 1;
+   35     MPI_Recv(&inrows[0][0], blocksize, MPI_INT, source, tag, MPI_COMM_WORLD, &status);
+   36 
+   37     /* apply filter mask to my partition*/
+   38     for (i = 1; i <= m; i++)
+   39         for (j = 1; j <= n; j++)
+   40             outrows[i - 1, j - 1] =
+   41             (int)((filter[0, 0] * inrows[i - 1, j - 1]
+   42                 + filter[0, 1] * inrows[i - 1, j]
+   43                 + filter[0, 2] * inrows[i - 1, j + 1]
+   44                 + filter[1, 0] * inrows[i, j - 1]
+   45                 + filter[1, 1] * inrows[i, j]
+   46                 + filter[1, 2] * inrows[i, j + 1]
+   47                 + filter[2, 0] * inrows[i + 1, j - 1]
+   48                 + filter[2, 1] * inrows[i + 1, j]
+   49                 + filter[2, 2] * inrows[i + 1, j + 1]) / 9);
+   50     /* send filtered partition back to process 0 */
+   51     blocksize = m * n;
+   52     dest = 0; tag = 2;
+   53     MPI_Send(&outrows[0][0], blocksize, MPI_INT, dest,
+   54         tag, MPI_COMM_WORLD);
+   55     /*assemble partitions into filtered image as output*/
+   56     if (myrank == 0) {
+   57         for (k = 0; k < totalproc; k++) {
+   58             source = k; tag = 2;
+   59             MPI_Recv(&outrows[0][0], blocksize, MPI_INT,
+   60                 source, tag, MPI_COMM_WORLD, &status);
+   61             cout << "P2";
+   62             cout << "# Created by GIMP version 2.10.34 PNM plug-in";
+   63             cout << "700 700";
+   64             cout << "255";
+   65             for (i = 0; i < m; i++) {
+   66                 for (j = 0; j < n; j++) {
+   67                     cout << outrows[i][j];
+   68                     if ((j % 20) == 9) {
+   69                         cout << endl;
+   70                     }
+   71                 }
+   72                 cout << endl;
+   73             }
+   74         }
+   75     }
+   76     MPI_Finalize();
+   77 }
